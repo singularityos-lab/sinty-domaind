@@ -110,6 +110,9 @@ func (a *Accounts) Ensure(ctx context.Context, name, realm, password string) err
 		a.Run(ctx, "", "cp", "-aT", a.Skel, home)
 		a.Run(ctx, "", "chown", "-R", name+":"+name, home)
 	}
+	if err := os.Chmod(home, 0o700); err != nil {
+		return undo(err)
+	}
 	if err := os.MkdirAll(filepath.Dir(a.marker(name)), 0o700); err != nil {
 		return undo(err)
 	}

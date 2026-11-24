@@ -38,7 +38,7 @@ func (f *fakeSystem) run(_ context.Context, stdin, name string, args ...string) 
 
 func newFake(t *testing.T) (*Accounts, *fakeSystem) {
 	f := &fakeSystem{users: map[string]string{"mirko": "1000"}, stdin: map[string]string{}}
-	a := &Accounts{Dir: t.TempDir(), Home: t.TempDir(), Shell: "/usr/bin/ush", Skel: "/nonexistent", Run: f.run,
+	a := &Accounts{Dir: t.TempDir(), Home: t.TempDir(), Shell: "/usr/bin/ush", Skel: skel(t), Run: f.run,
 		Lookup: func(n string) (string, bool) { u, ok := f.users[n]; return u, ok }}
 	return a, f
 }
@@ -69,6 +69,9 @@ func TestTheFirstSignInCreatesAnEncryptedHome(t *testing.T) {
 		if strings.Contains(c, "Corr3ct") {
 			t.Fatalf("the password appeared in arguments: %s", c)
 		}
+	}
+	if info, err := os.Stat(filepath.Join(a.Home, "alice")); err != nil || info.Mode().Perm() != 0o700 {
+		t.Fatalf("home must be private: %v %v", info.Mode(), err)
 	}
 	b, err := os.ReadFile(a.marker("alice"))
 	if err != nil || strings.TrimSpace(string(b)) != "RECOVERY-1234" {
@@ -124,4 +127,10 @@ func TestADisabledAccountIsLockedLocallyToo(t *testing.T) {
 	if strings.Join(f.calls, "|") != "usermod -L alice|usermod -p * alice" {
 		t.Fatal(f.calls)
 	}
+}
+
+func skel(t *testing.T) string {
+	d := t.TempDir()
+	os.Chmod(d, 0o755)
+	return d
 }

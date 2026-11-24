@@ -54,31 +54,40 @@ func directory(j domain.Join) string {
 
 func main() {
 	state := flag.String("state", "/var/lib/sinty-domaind", "where the domain membership and cached sign-ins are kept")
+	socket := flag.String("socket", gate.Socket, "sign-in socket for the login service")
 	flag.Parse()
 	log.SetFlags(0)
 	d := domain.New(*state)
-	conn, err := dbus.ConnectSystemBus()
-	if err != nil {
-		log.Fatalf("system bus: %v", err)
-	}
-	defer conn.Close()
-	var work atomic.Bool
-	svc := &service.Service{D: d, Work: work.Load}
-	if err := service.Export(conn, svc); err != nil {
-		log.Fatalf("export: %v", err)
-	}
-	reply, err := conn.RequestName(service.Name, dbus.NameFlagDoNotQueue)
-	if err != nil || reply != dbus.RequestNameReplyPrimaryOwner {
-		log.Fatalf("cannot own %s: %v", service.Name, err)
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	ln, err := gate.Listen(gate.Socket)
+	ln, err := gate.Listen(*socket)
 	if err != nil {
 		log.Fatalf("sign-in socket: %v", err)
 	}
 	defer ln.Close()
 	go (&gate.Gate{D: d, Accounts: account.New(*state)}).Serve(ln)
+	if conn, err := dbus.ConnectSystemBus(); err != nil {
+		log.Printf("system bus: %v, signing in still works", err)
+	} else {
+		defer conn.Close()
+		serveBus(ctx, conn, d)
+	}
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	<-sig
+}
+
+func serveBus(ctx context.Context, conn *dbus.Conn, d *domain.Domain) {
+	var work atomic.Bool
+	if err := service.Export(conn, &service.Service{D: d, Work: work.Load}); err != nil {
+		log.Printf("export: %v", err)
+		return
+	}
+	reply, err := conn.RequestName(service.Name, dbus.NameFlagDoNotQueue)
+	if err != nil || reply != dbus.RequestNameReplyPrimaryOwner {
+		log.Printf("cannot own %s: %v", service.Name, err)
+		return
+	}
 	go func() {
 		last := ""
 		for {
@@ -106,7 +115,4 @@ func main() {
 			}
 		}
 	}()
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-	<-sig
 }
