@@ -2,3 +2,4 @@
 Name=dev.sinty.Domain1
 Exec=/usr/libexec/sinty-domaind
 User=root
+SystemdService=sinty-domaind.service

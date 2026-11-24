@@ -1,0 +1,16 @@
+[Unit]
+Description=Sinty organisation accounts
+Documentation=https://github.com/singularityos-lab/sinty-domaind
+Wants=dbus.service
+After=dbus.service
+Before=sinty-logind.service
+
+[Service]
+Type=simple
+ExecStartPre=-/bin/mkdir -m 0700 -p /var/lib/sinty-domaind
+ExecStart=/usr/libexec/sinty-domaind
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target

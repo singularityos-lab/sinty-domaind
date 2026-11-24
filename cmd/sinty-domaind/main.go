@@ -13,7 +13,9 @@ import (
 
 	"github.com/godbus/dbus/v5"
 
+	"github.com/singularityos-lab/sinty-domaind/internal/account"
 	"github.com/singularityos-lab/sinty-domaind/internal/domain"
+	"github.com/singularityos-lab/sinty-domaind/internal/gate"
 	"github.com/singularityos-lab/sinty-domaind/internal/service"
 	"github.com/singularityos-lab/sinty-domaind/internal/worknet"
 )
@@ -71,6 +73,12 @@ func main() {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	ln, err := gate.Listen(gate.Socket)
+	if err != nil {
+		log.Fatalf("sign-in socket: %v", err)
+	}
+	defer ln.Close()
+	go (&gate.Gate{D: d, Accounts: account.New(*state)}).Serve(ln)
 	go func() {
 		last := ""
 		for {

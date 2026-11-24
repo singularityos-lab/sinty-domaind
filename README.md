@@ -22,6 +22,21 @@ doubling up to an hour. A password changed elsewhere replaces the verifier at
 the next online sign-in. An account the controller reports as disabled loses
 its cached sign-in at once.
 
+## The local account
+
+The first online sign-in gives the user a local account: `useradd` with the
+home under `/var/home`, the session groups but no administrator group, and the
+home encrypted by `sintykey provision` with the domain password as its secret,
+exactly as a local account is sealed with its PIN. The recovery code is kept in
+`/var/lib/sinty-domaind/accounts/<user>`, readable by root only. A local
+account that already has the name is never taken over. An account the
+controller reports as disabled is locked locally as well, and unlocked again
+at its next successful online sign-in.
+
+`pam_sinty` asks the daemon on `/run/sinty-domaind.sock`, which only root may
+use: it sends `login`, the user name and the password, one per line, and reads
+`OK online`, `OK offline` or `ERR` followed by one of the failure names below.
+
 ## Joining
 
 The administrator creates the device account and gives the device its secret,
@@ -50,7 +65,7 @@ Name `dev.sinty.Domain1`, object `/dev/sinty/Domain1`, interface
 
 Failures are `dev.sinty.Domain1.Error.` followed by `Wrong`, `Disabled`,
 `Expired`, `Locked`, `NeedsNetwork`, `Untrusted`, `NotJoined`, `NotAllowed` or
-`Failed`.
+`Failed`, and on the socket also `Conflict`.
 
 ## Command line
 

@@ -21,6 +21,7 @@ vet:
 install: release
 	install -Dm755 sinty-domaind $(DESTDIR)$(PREFIX)/libexec/sinty-domaind
 	install -Dm755 sinty-domain $(DESTDIR)$(PREFIX)/bin/sinty-domain
+	install -Dm644 packaging/sinty-domaind.service $(DESTDIR)$(PREFIX)/lib/systemd/system/sinty-domaind.service
 	install -Dm644 packaging/sinty-domaind.conf $(DESTDIR)$(PREFIX)/share/dbus-1/system.d/sinty-domaind.conf
 	install -Dm644 packaging/dev.sinty.Domain1.service $(DESTDIR)$(PREFIX)/share/dbus-1/system-services/dev.sinty.Domain1.service
 
