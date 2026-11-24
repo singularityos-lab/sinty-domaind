@@ -14,13 +14,12 @@ encrypted-timestamp pre-authentication, AES256 or AES128 with HMAC-SHA1
 know that key cannot produce the ticket, so a spoofed controller cannot accept
 an arbitrary password.
 
-After an online sign-in the device keeps a PBKDF2-SHA256 verifier of the
-password (600 000 rounds, random salt, root-only file). Offline sign-in is
-checked against it until the lease ends, seven days after the last online
-sign-in by default. Five wrong passwords lock offline sign-in for a minute,
-doubling up to an hour. A password changed elsewhere replaces the verifier at
-the next online sign-in. An account the controller reports as disabled loses
-its cached sign-in at once.
+After an online sign-in the device keeps a lease: offline sign-in is allowed
+until it ends, seven days after the last online sign-in by default. Nothing
+derived from the password is stored by this daemon. Offline, the password is
+checked by unsealing the user's home, so every wrong guess counts against the
+TPM's lockout. An account the controller reports as disabled loses its lease
+at once.
 
 ## The local account
 
@@ -60,11 +59,10 @@ Name `dev.sinty.Domain1`, object `/dev/sinty/Domain1`, interface
 | --- | --- | --- |
 | `Status` | `() -> (b joined, s realm, s host, b work_network)` | anyone |
 | `Join` | `(s realm, s host, s secret, as controllers, s directory, s pin)` | root |
-| `Login` | `(s user, s password) -> (b offline, x lease_end)` | root |
-| `Leave` | `()` | root, forgets every cached sign-in |
+| `Leave` | `()` | root, forgets every lease |
 
 Failures are `dev.sinty.Domain1.Error.` followed by `Wrong`, `Disabled`,
-`Expired`, `Locked`, `NeedsNetwork`, `Untrusted`, `NotJoined`, `NotAllowed` or
+`Expired`, `NeedsNetwork`, `Untrusted`, `NotJoined`, `NotAllowed` or
 `Failed`, and on the socket also `Conflict`.
 
 ## Command line
@@ -73,7 +71,6 @@ Failures are `dev.sinty.Domain1.Error.` followed by `Wrong`, `Disabled`,
 sinty-domain status
 sinty-domain pin dc.example.com:636
 echo "$SECRET" | sinty-domain join -realm EXAMPLE.COM -host pc1.example.com -kdc dc.example.com -pin 3f2a...
-echo "$PASSWORD" | sinty-domain login alice
 sinty-domain leave
 ```
 

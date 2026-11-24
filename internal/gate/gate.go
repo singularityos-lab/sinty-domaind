@@ -79,8 +79,6 @@ func reason(err error) string {
 		return "Disabled"
 	case errors.Is(err, domain.ErrExpired):
 		return "Expired"
-	case errors.Is(err, domain.ErrLocked):
-		return "Locked"
 	case errors.Is(err, domain.ErrOfflineStale), errors.Is(err, domain.ErrUnknownUser):
 		return "NeedsNetwork"
 	case errors.Is(err, domain.ErrSpoofed):

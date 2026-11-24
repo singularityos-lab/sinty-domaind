@@ -25,7 +25,6 @@ func usage() {
   sinty-domain status
   sinty-domain pin HOST:636
   sinty-domain join -realm REALM -host NAME [-kdc HOST[:PORT]]... [-directory HOST:636] [-pin SHA256]   (device secret on standard input)
-  sinty-domain login USER   (password on standard input)
   sinty-domain leave`)
 	os.Exit(2)
 }
@@ -93,20 +92,6 @@ func main() {
 			fail(err)
 		}
 		fmt.Println("joined")
-	case "login":
-		if len(os.Args) != 3 {
-			usage()
-		}
-		var offline bool
-		var until int64
-		if err := obj.Call(iface+".Login", 0, os.Args[2], readLine()).Store(&offline, &until); err != nil {
-			fail(err)
-		}
-		how := "online"
-		if offline {
-			how = "offline"
-		}
-		fmt.Printf("signed in %s, offline sign-in allowed until %s\n", how, time.Unix(until, 0).Format(time.RFC3339))
 	case "leave":
 		if err := obj.Call(iface+".Leave", 0).Err; err != nil {
 			fail(err)

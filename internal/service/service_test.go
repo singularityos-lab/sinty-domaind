@@ -57,13 +57,7 @@ func TestOnlyTheSystemCanJoinOrCheckPasswords(t *testing.T) {
 	if err := obj.Call(Iface+".Join", 0, "EXAMPLE.TEST", "pc.example.test", "secret", []string{"127.0.0.1:1"}, "", "").Err; errName(err) != "NotAllowed" {
 		t.Fatalf("a desktop user joined: %v", err)
 	}
-	if err := obj.Call(Iface+".Login", 0, "alice", "pw").Err; errName(err) != "NotAllowed" {
-		t.Fatalf("a desktop user checked a password: %v", err)
-	}
 	uid = 0
-	if err := obj.Call(Iface+".Login", 0, "alice", "pw").Err; errName(err) != "NotJoined" {
-		t.Fatalf("before joining: %v", err)
-	}
 	if err := obj.Call(Iface+".Join", 0, "EXAMPLE.TEST", "pc.example.test", "secret", []string{"127.0.0.1:1"}, "", "").Err; err != nil {
 		t.Fatal(err)
 	}
@@ -71,9 +65,6 @@ func TestOnlyTheSystemCanJoinOrCheckPasswords(t *testing.T) {
 	var realm, host string
 	if err := obj.Call(Iface+".Status", 0).Store(&joined, &realm, &host, &work); err != nil || !joined || realm != "EXAMPLE.TEST" || host != "pc.example.test" || work {
 		t.Fatalf("status %v %s %s %v %v", joined, realm, host, work, err)
-	}
-	if err := obj.Call(Iface+".Login", 0, "alice", "pw").Err; errName(err) != "NeedsNetwork" {
-		t.Fatalf("never signed in and no controller: %v", err)
 	}
 	uid = 1000
 	if err := obj.Call(Iface+".Leave", 0).Err; errName(err) != "NotAllowed" {

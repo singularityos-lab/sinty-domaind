@@ -1,12 +1,10 @@
-// Package service exports dev.sinty.Domain1 on the system bus. Only root may
-// call it: the login service asks it to check a password, the Settings helper
-// to join or leave.
+// Package service exports dev.sinty.Domain1 on the system bus: anyone may read
+// the membership, only root may join or leave.
 package service
 
 import (
 	"context"
 	"errors"
-	"time"
 
 	"github.com/godbus/dbus/v5"
 	"github.com/godbus/dbus/v5/introspect"
@@ -65,36 +63,6 @@ func (s *Service) Leave(sender dbus.Sender) *dbus.Error {
 		return dbusErr("Failed", err)
 	}
 	return nil
-}
-
-func (s *Service) Login(sender dbus.Sender, user, password string) (bool, int64, *dbus.Error) {
-	if e := s.root(sender); e != nil {
-		return false, 0, e
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	r, err := s.D.Login(ctx, user, password)
-	if err != nil {
-		name := "Failed"
-		switch {
-		case errors.Is(err, domain.ErrWrong):
-			name = "Wrong"
-		case errors.Is(err, domain.ErrDisabled):
-			name = "Disabled"
-		case errors.Is(err, domain.ErrExpired):
-			name = "Expired"
-		case errors.Is(err, domain.ErrLocked):
-			name = "Locked"
-		case errors.Is(err, domain.ErrOfflineStale), errors.Is(err, domain.ErrUnknownUser):
-			name = "NeedsNetwork"
-		case errors.Is(err, domain.ErrSpoofed):
-			name = "Untrusted"
-		case errors.Is(err, domain.ErrNotJoined):
-			name = "NotJoined"
-		}
-		return false, 0, dbusErr(name, err)
-	}
-	return r.Offline, r.Until.Unix(), nil
 }
 
 func Export(conn *dbus.Conn, s *Service) error {

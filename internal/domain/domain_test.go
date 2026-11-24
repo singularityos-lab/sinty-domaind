@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
 	"os"
@@ -42,13 +43,7 @@ func TestOfflineSignInLastsAsLongAsTheLease(t *testing.T) {
 	if _, err := d.Login(ctx, "alice", "pw"); !errors.Is(err, ErrUnknownUser) {
 		t.Fatalf("never signed in: %v", err)
 	}
-	if _, err := d.remember("alice", "pw", 7*24*time.Hour); err != nil {
-		t.Fatal(err)
-	}
-	info, _ := os.Stat(d.userPath("alice"))
-	if info.Mode().Perm() != 0o600 {
-		t.Fatalf("cache mode %v", info.Mode())
-	}
+	writeJSON(d.userPath("alice"), lease{Until: clk.t.Add(7 * 24 * time.Hour)})
 	r, err := d.Login(ctx, "alice", "pw")
 	if err != nil || !r.Offline {
 		t.Fatalf("%+v %v", r, err)
@@ -59,35 +54,26 @@ func TestOfflineSignInLastsAsLongAsTheLease(t *testing.T) {
 	}
 }
 
-func TestWrongPasswordsLockOfflineSignIn(t *testing.T) {
-	d, clk := offlineDomain(t)
-	ctx := context.Background()
-	d.remember("alice", "right", time.Hour*100)
-	for i := 0; i < freeAttempts; i++ {
-		if _, err := d.Login(ctx, "alice", "wrong"); !errors.Is(err, ErrWrong) {
-			t.Fatalf("attempt %d: %v", i, err)
-		}
+func TestNothingThatCouldRevealThePasswordIsKept(t *testing.T) {
+	addr := os.Getenv("KRB_TEST_KDC")
+	if addr == "" {
+		t.Skip("set KRB_TEST_KDC to a domain controller for EXAMPLE.TEST")
 	}
-	if _, err := d.Login(ctx, "alice", "right"); !errors.Is(err, ErrLocked) {
-		t.Fatalf("locked account let in: %v", err)
-	}
-	clk.t = clk.t.Add(time.Minute + time.Second)
-	if _, err := d.Login(ctx, "alice", "wrong"); !errors.Is(err, ErrWrong) {
+	d := realDomain(t, "machine secret 42")
+	if _, err := d.Login(context.Background(), "alice", "Corr3ct horse"); err != nil {
 		t.Fatal(err)
 	}
-	clk.t = clk.t.Add(time.Minute + time.Second)
-	if _, err := d.Login(ctx, "alice", "right"); !errors.Is(err, ErrLocked) {
-		t.Fatalf("the second lockout must be longer: %v", err)
-	}
-	clk.t = clk.t.Add(time.Minute)
-	if r, err := d.Login(ctx, "alice", "right"); err != nil || !r.Offline {
-		t.Fatalf("after waiting: %v", err)
-	}
-	if _, err := d.Login(ctx, "alice", "wrong"); !errors.Is(err, ErrWrong) {
+	b, err := os.ReadFile(d.userPath("alice"))
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.Login(ctx, "alice", "right"); err != nil {
-		t.Fatalf("a success clears the count: %v", err)
+	var fields map[string]any
+	json.Unmarshal(b, &fields)
+	if len(fields) != 1 || fields["until"] == nil {
+		t.Fatalf("the cache holds more than the lease: %s", b)
+	}
+	if info, _ := os.Stat(d.userPath("alice")); info.Mode().Perm() != 0o600 {
+		t.Fatal(info.Mode())
 	}
 }
 
@@ -108,13 +94,13 @@ func TestNothingWorksBeforeJoining(t *testing.T) {
 }
 
 func TestLeavingForgetsEveryAccount(t *testing.T) {
-	d, _ := offlineDomain(t)
-	d.remember("alice", "pw", time.Hour)
+	d, clk := offlineDomain(t)
+	writeJSON(d.userPath("alice"), lease{Until: clk.t.Add(time.Hour)})
 	if err := d.Leave(); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(d.userPath("alice")); !os.IsNotExist(err) {
-		t.Fatal("cache left behind")
+		t.Fatal("lease left behind")
 	}
 	if _, err := d.Joined(); !errors.Is(err, ErrNotJoined) {
 		t.Fatal(err)
@@ -155,8 +141,8 @@ func TestSigningInWithTheDomainAndThenWithoutIt(t *testing.T) {
 	if r, err := d.Login(ctx, "alice", "Corr3ct horse"); err != nil || !r.Offline {
 		t.Fatalf("offline: %+v %v", r, err)
 	}
-	if _, err := d.Login(ctx, "alice", "Wrong horse"); !errors.Is(err, ErrWrong) {
-		t.Fatalf("wrong offline: %v", err)
+	if _, err := d.Login(ctx, "bob", "no preauth here"); !errors.Is(err, ErrUnknownUser) {
+		t.Fatalf("never signed in here: %v", err)
 	}
 }
 

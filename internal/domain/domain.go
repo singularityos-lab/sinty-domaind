@@ -1,14 +1,10 @@
-// Package domain signs people in with their organisation's account: online
-// against the domain controller, offline against what the last online sign-in
-// left on this device.
+// Package domain checks organisation accounts against the domain controller
+// and keeps the lease that allows signing in without it. Offline, the password
+// itself is checked by the seal of the user's home, which the TPM throttles.
 package domain
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/pbkdf2"
-	"crypto/rand"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,18 +19,11 @@ import (
 	"github.com/singularityos-lab/sinty-domaind/internal/krb"
 )
 
-const (
-	verifierRounds = 600000
-	freeAttempts   = 5
-	maxLockout     = time.Hour
-)
-
 var (
 	ErrNotJoined    = errors.New("this device has not joined a domain")
 	ErrWrong        = errors.New("wrong user name or password")
 	ErrDisabled     = errors.New("this account is disabled")
 	ErrExpired      = errors.New("the password has expired, change it on a device connected to the domain")
-	ErrLocked       = errors.New("too many attempts, try again later")
 	ErrOfflineStale = errors.New("connect to the organisation's network to sign in again")
 	ErrUnknownUser  = errors.New("this account has never signed in on this device, connect to the organisation's network")
 	ErrSpoofed      = errors.New("the domain controller could not prove who it is")
@@ -60,12 +49,8 @@ func (j Join) machineSalt() string {
 	return strings.ToUpper(j.Realm) + "host" + strings.ToLower(j.Host)
 }
 
-type cached struct {
-	Salt     []byte    `json:"salt"`
-	Verifier []byte    `json:"verifier"`
-	Until    time.Time `json:"until"`
-	Failures int       `json:"failures"`
-	Locked   time.Time `json:"locked"`
+type lease struct {
+	Until time.Time `json:"until"`
 }
 
 type Result struct {
@@ -173,49 +158,32 @@ func (d *Domain) Login(ctx context.Context, user, password string) (Result, erro
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	var c cached
-	hasCache := readJSON(d.userPath(user), &c) == nil
-	now := d.Now()
-	if hasCache && now.Before(c.Locked) {
-		return Result{}, ErrLocked
-	}
+	var l lease
+	known := readJSON(d.userPath(user), &l) == nil
 	err = d.online(ctx, j, user, password)
 	switch {
 	case err == nil:
-		c, err := d.remember(user, password, j.Lease)
-		if err != nil {
+		l = lease{Until: d.Now().Add(j.Lease).UTC()}
+		if err := writeJSON(d.userPath(user), l); err != nil {
 			return Result{}, err
 		}
-		return Result{User: user, Until: c.Until}, nil
+		return Result{User: user, Until: l.Until}, nil
 	case errors.Is(err, ErrDisabled):
 		os.Remove(d.userPath(user))
 		return Result{}, err
-	case errors.Is(err, ErrWrong):
-		if hasCache {
-			d.fail(user, c)
-		}
-		return Result{}, err
-	case errors.Is(err, ErrExpired), errors.Is(err, ErrSpoofed):
+	case errors.Is(err, ErrWrong), errors.Is(err, ErrExpired), errors.Is(err, ErrSpoofed):
 		return Result{}, err
 	}
 	if !unreachable(err) {
 		return Result{}, err
 	}
-	if !hasCache {
+	if !known {
 		return Result{}, ErrUnknownUser
 	}
-	if !now.Before(c.Until) {
+	if !d.Now().Before(l.Until) {
 		return Result{}, ErrOfflineStale
 	}
-	got := pbkdf2Verifier(password, c.Salt)
-	if !hmac.Equal(got, c.Verifier) {
-		d.fail(user, c)
-		return Result{}, ErrWrong
-	}
-	c.Failures = 0
-	c.Locked = time.Time{}
-	writeJSON(d.userPath(user), c)
-	return Result{User: user, Offline: true, Until: c.Until}, nil
+	return Result{User: user, Offline: true, Until: l.Until}, nil
 }
 
 func (d *Domain) online(ctx context.Context, j Join, user, password string) error {
@@ -261,30 +229,4 @@ func ticketKey(st *krb.ServiceTicket, j Join) (krb.Key, error) {
 		return krb.Key{}, err
 	}
 	return krb.StringToKey(etype, j.Machine, j.machineSalt(), 0)
-}
-
-func pbkdf2Verifier(password string, salt []byte) []byte {
-	v, _ := pbkdf2.Key(sha256.New, password, salt, verifierRounds, 32)
-	return v
-}
-
-func (d *Domain) remember(user, password string, lease time.Duration) (cached, error) {
-	salt := make([]byte, 16)
-	if _, err := rand.Read(salt); err != nil {
-		return cached{}, err
-	}
-	c := cached{Salt: salt, Verifier: pbkdf2Verifier(password, salt), Until: d.Now().Add(lease).UTC()}
-	return c, writeJSON(d.userPath(user), c)
-}
-
-func (d *Domain) fail(user string, c cached) {
-	c.Failures++
-	if c.Failures >= freeAttempts {
-		wait := time.Minute << (c.Failures - freeAttempts)
-		if wait <= 0 || wait > maxLockout {
-			wait = maxLockout
-		}
-		c.Locked = d.Now().Add(wait)
-	}
-	writeJSON(d.userPath(user), c)
 }
