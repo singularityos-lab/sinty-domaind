@@ -13,6 +13,8 @@ import (
 
 	"github.com/godbus/dbus/v5"
 
+	"github.com/singularityos-lab/libsingularity/src/system/core/go/busname"
+
 	"github.com/singularityos-lab/sinty-domaind/internal/account"
 	"github.com/singularityos-lab/sinty-domaind/internal/domain"
 	"github.com/singularityos-lab/sinty-domaind/internal/gate"
@@ -83,8 +85,7 @@ func serveBus(ctx context.Context, conn *dbus.Conn, d *domain.Domain) {
 		log.Printf("export: %v", err)
 		return
 	}
-	reply, err := conn.RequestName(service.Name, dbus.NameFlagDoNotQueue)
-	if err != nil || reply != dbus.RequestNameReplyPrimaryOwner {
+	if err := busname.Own(context.Background(), conn, service.Name); err != nil {
 		log.Printf("cannot own %s: %v", service.Name, err)
 		return
 	}
